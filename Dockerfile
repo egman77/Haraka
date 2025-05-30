@@ -22,6 +22,9 @@ ENV HOME /root
 RUN /etc/my_init.d/00_regen_ssh_host_keys.sh
 
 RUN sed 's/main$/main universe/' -i /etc/apt/sources.list
+RUN sed -i 's|http://.*archive.ubuntu.com|https://mirrors.aliyun.com|g' /etc/apt/sources.list && \
+    sed -i 's|http://.*security.ubuntu.com|https://mirrors.aliyun.com|g' /etc/apt/sources.list && \
+    sed 's/main$/main universe/' -i /etc/apt/sources.list
 RUN DEBIAN_FRONTEND=noninteractive apt-get -y -q update
 RUN DEBIAN_FRONTEND=noninteractive apt-get -y -q install software-properties-common g++ make git curl
 RUN curl -sL https://deb.nodesource.com/setup_18.x | setuser root bash -
