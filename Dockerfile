@@ -38,6 +38,7 @@ RUN npm install -g Haraka --unsafe
 RUN haraka -i /usr/local/haraka
 ADD ./config/host_list /usr/local/haraka/config/host_list
 ADD ./config/plugins /usr/local/haraka/config/plugins
+ADD ./config/log.ini /usr/local/haraka/config/log.ini
 RUN cd /usr/local/haraka && npm install
 
 # Create haraka runit service
