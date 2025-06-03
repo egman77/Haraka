@@ -29,6 +29,7 @@ logger.add_log_methods(Server, 'server');
 Server.listeners = [];
 
 Server.load_smtp_ini = () => {
+    // 加载 smtp..ini配置文件，并处理配置默认值
     Server.cfg = Server.config.get('smtp.ini', {
         booleans: [
             '-main.daemonize',
@@ -67,6 +68,7 @@ Server.load_http_ini = () => {
 Server.load_smtp_ini();
 Server.load_http_ini();
 
+// 将进程转为守护进程，处理日志文件与PID文件
 Server.daemonize = function () {
     const c = this.cfg.main;
     if (!c.daemonize) return;
@@ -93,6 +95,7 @@ Server.daemonize = function () {
 }
 
 Server.flushQueue = domain => {
+    //如处理集群模式，需要刷新邮件队列
     if (!Server.cluster) {
         outbound.flush_queue(domain);
         return;
@@ -117,6 +120,7 @@ Server.stopListeners = () => {
     Server.listeners = [];
 }
 
+//  执行服务器关闭操作
 Server.performShutdown = () => {
     if (Server.cfg.main.graceful_shutdown) {
         return Server.gracefulShutdown();
@@ -125,6 +129,7 @@ Server.performShutdown = () => {
     process.exit(0);
 }
 
+// 优雅地关闭服务器
 Server.gracefulShutdown = () => {
     Server.stopListeners();
     Server._graceful(() => {
@@ -229,6 +234,7 @@ Server._graceful = async (shutdown) => {
     Server.lognotice(`Reload complete, workers: ${JSON.stringify(Object.keys(cluster.workers))}`);
 }
 
+// 向主进程发送消息
 Server.sendToMaster = (command, params) => {
     // console.log("Send to master: ", command);
     if (Server.cluster) {
@@ -244,6 +250,7 @@ Server.sendToMaster = (command, params) => {
     }
 }
 
+// 主进程接收并处理消息
 Server.receiveAsMaster = (command, params) => {
     if (!Server[command]) {
         Server.logerror(`Invalid command: ${command}`);
@@ -252,6 +259,7 @@ Server.receiveAsMaster = (command, params) => {
     Server[command].apply(Server, params);
 }
 
+// 消息处理函数
 function messageHandler (worker, msg, handle) {
     // sunset Haraka v3 (Node < 6)
     if (arguments.length === 2) {
@@ -265,6 +273,7 @@ function messageHandler (worker, msg, handle) {
     }
 }
 
+// 获取监听地址
 Server.get_listen_addrs = (cfg, port) => {
     if (!port) port = 25;
     let listeners = [];
@@ -293,6 +302,9 @@ Server.get_listen_addrs = (cfg, port) => {
     return listeners;
 }
 
+// 创建服务器
+// 处理集群模式
+// 启动 SMTP 和 HTTP 监听器
 Server.createServer = params => {
     const c = Server.cfg.main;
     for (const key in params) {
@@ -342,6 +354,7 @@ Server.load_default_tls_config = done => {
     })
 }
 
+// 创建SMTM服务器
 Server.get_smtp_server = async (ep, inactivity_timeout) => {
     let server;
 
@@ -388,6 +401,7 @@ Server.get_smtp_server = async (ep, inactivity_timeout) => {
     }
 }
 
+// 配置SMTP监听器
 Server.setup_smtp_listeners = async (plugins2, type, inactivity_timeout) => {
 
     const errors = []
@@ -445,6 +459,7 @@ Server.setup_smtp_listeners = async (plugins2, type, inactivity_timeout) => {
     plugins2.run_hooks(`init_${type}`, Server);
 }
 
+// 配置 HTTP 监听器
 Server.setup_http_listeners = async () => {
     if (!Server.http?.cfg?.listen) return;
 
