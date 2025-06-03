@@ -37,12 +37,21 @@ RUN DEBIAN_FRONTEND=noninteractive apt-get -y -q install nodejs && \
 #RUN /usr/sbin/enable_insecure_key
 
 # Install Haraka
-RUN npm install -g Haraka --unsafe
-RUN haraka -i /usr/local/haraka
-ADD ./config/host_list /usr/local/haraka/config/host_list
-ADD ./config/plugins /usr/local/haraka/config/plugins
-ADD ./config/log.ini /usr/local/haraka/config/log.ini
-RUN cd /usr/local/haraka && npm install
+# RUN npm install -g Haraka --unsafe
+# RUN haraka -i /usr/local/haraka
+# ADD ./config/host_list /usr/local/haraka/config/host_list
+# ADD ./config/plugins /usr/local/haraka/config/plugins
+# ADD ./config/log.ini /usr/local/haraka/config/log.ini
+# RUN cd /usr/local/haraka && npm install
+
+# 将当前项目代码复制到镜象目录中
+COPY . /usr/local/haraka
+
+# 进入项目目录并安装依赖
+WORKDIR /usr/local/haraka
+RUN DEBIAN_FRONTEND=noninteractive npm install
+
+#初始化 Harak
 
 # Create haraka runit service
 RUN mkdir /etc/service/haraka
