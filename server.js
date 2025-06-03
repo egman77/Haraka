@@ -658,6 +658,11 @@ Server.init_child_respond = (retval, msg) => {
     logger.dump_and_exit(1);
 }
 
+/**
+ * 在服务器开始监听后，降低进程的权限
+ * 以增强服务器安全性， 
+ * 将Server.ready 标志设置为1,表示服务器已准备好处理请求
+ */
 Server.listening = () => {
     const c = Server.cfg.main;
 
@@ -676,6 +681,10 @@ Server.listening = () => {
     Server.ready = 1;
 }
 
+/**
+ * 在 HTTP 服务器禄始化响应阶段被调用
+ * 尝试创建WebSOcket服务器，并对它进行初始化操作
+ */
 Server.init_http_respond = () => {
     Server.loginfo('init_http_respond');
 
@@ -697,10 +706,18 @@ Server.init_http_respond = () => {
     Server.plugins.run_hooks('init_wss', Server);
 }
 
+/**
+ * 在WebSocket服务器初始化响应阶段被调用，只输出一条日志
+ */
 Server.init_wss_respond = () => {
     Server.loginfo('init_wss_respond');
 }
 
+
+/**
+ * 获取 HTTP 服务器的文档根目录
+ * 默认拼接出 文档根目录 http/html,并设置 Server.http.cfg.docroot
+ */
 Server.get_http_docroot = () => {
     if (Server.http.cfg.docroot) return Server.http.cfg.docroot;
 
@@ -709,6 +726,12 @@ Server.get_http_docroot = () => {
     return Server.http.cfg.docroot;
 }
 
+/**
+ * 404 错误处理函数
+ * @param {*} req 
+ * @param {*} res 
+ * @returns 
+ */
 Server.handle404 = (req, res) => {
     // abandon all hope, serve up a 404
     const docroot = Server.get_http_docroot();
