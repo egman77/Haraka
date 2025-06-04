@@ -411,6 +411,8 @@ Server.get_listen_addrs = (cfg, port) => {
  * @returns 
  */
 Server.createServer = params => {
+    Server.lognotice(`CreateServer(server.js)  ${params}`);
+
     const c = Server.cfg.main;
     for (const key in params) {
         if (typeof params[key] === 'function') continue;
@@ -424,6 +426,7 @@ Server.createServer = params => {
     const inactivity_timeout = (c.inactivity_timeout || 300) * 1000;
 
     if (!cluster || !c.nodes) {
+        Server.lognotice(`CreateServer(server.js) daemonize `);
         Server.daemonize(c);
         Server.setup_smtp_listeners(Server.plugins, 'master', inactivity_timeout);
         return;
@@ -434,10 +437,13 @@ Server.createServer = params => {
 
     // Cluster Workers
     if (!cluster.isMaster) {
+        Server.lognotice(`CreateServer(server.js) is Workers`);
+
         Server.setup_smtp_listeners(Server.plugins, 'child', inactivity_timeout);
         return;
     }
     else {
+        Server.lognotice(`CreateServer(server.js)  is Master`);
         // console.log("Setting up message handler");
         cluster.on('message', messageHandler);
     }
@@ -445,6 +451,7 @@ Server.createServer = params => {
     // Cluster Master
     // We fork workers in init_master_respond so that plugins
     // can put handlers on cluster events before they are emitted.
+    Server.lognotice(`CreateServer(server.js)  will run hooks...`);
     Server.plugins.run_hooks('init_master', Server);
 }
 
