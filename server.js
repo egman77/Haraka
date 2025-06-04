@@ -148,7 +148,12 @@ Server.daemonize = function () {
         // 创建 PID 文件（通常是 /var/run/haraka.pid），其中包含守护进程的进程ID。
         // `removeOnExit()` 确保当进程正常退出时，PID 文件会被自动删除。
 
-        Server.lognotice('Exit npid...')
+        Server.lognotice('Exit npid...');
+
+           // 检查PID文件是否存在
+        if(fs.existsSync(c.daemon_pid_file)){
+            Server.logerror(`PID file ${c.daemon_pid_file} still exists...`);
+        }
     }
     catch (err) {
         Server.logerror('catch err: '+err.message);
