@@ -411,7 +411,7 @@ Server.get_listen_addrs = (cfg, port) => {
  * @returns 
  */
 Server.createServer = params => {
-    Server.lognotice(`CreateServer(server.js)  ${params}`);
+    Server.lognotice(`Start create a server...  ${params}`);
 
     const c = Server.cfg.main;
     for (const key in params) {
