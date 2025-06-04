@@ -267,7 +267,7 @@ logger.set_loglevel = function (level) {
     const loglevel_num = parseInt(level);
     if (typeof level === 'string') {
         // 如果 level 是字符串，则记录日志并设置日志级别
-        this.log('INFO', `loglevel: ${level.toUpperCase()}`);
+        this.log('INFO', `hdh: loglevel: ${level.toUpperCase()}`);
         logger.loglevel = logger.levels[level.toUpperCase()];
     }
     else {
@@ -290,7 +290,7 @@ logger.set_format = function (format) {
     if (format) {
         // 如果 format 存在，则设置日志格式并记录日志
         logger.format = logger.formats[format.toUpperCase()];
-        this.log('INFO', `log format: ${format.toUpperCase()}`);
+        this.log('INFO', `hdh: log format: ${format.toUpperCase()}`);
     }
     else {
         // 否则将日志格式设为 null

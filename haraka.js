@@ -17,7 +17,7 @@ if (!process.env.HARAKA) {
     console.warn("WARNING: Not running installed Haraka - command line arguments ignored")
 }
 
-// this must be set before "server.js" is loaded
+// this must be set before "server.js" is 
 // 在加载 'server.js' 之前必须设置 HARAKA 环境变量
 process.env.HARAKA = process.env.HARAKA || path.resolve('.');
 // 如果 HARAKA 环境变量未设置，则默认为当前工作目录
