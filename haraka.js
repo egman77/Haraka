@@ -42,6 +42,8 @@ const utils = require('haraka-utils');
 const logger = require('./logger');
 // 导入本地的 'logger.js' 模块，用于日志记录
 
+logger.notice(`logger start in pid:${process.pid}:========================>`);
+
 const server = require('./server');
 // 导入本地的 'server.js' 模块，负责服务器的核心逻辑
 
@@ -133,7 +135,7 @@ process.on('exit', code => {
     // 记录所有缓冲的日志
 });
 
-logger.log('NOTICE', `Starting up Haraka version ${exports.version}`);
+logger.log('NOTICE', `hdh: Starting up Haraka version ${exports.version}`);
 // 记录 Haraka 启动及其版本号
 
 server.createServer();
