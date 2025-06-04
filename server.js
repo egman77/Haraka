@@ -77,30 +77,52 @@ Server.load_http_ini();
 /**
  * 将进程转为守护进程
  * 处理日志文件和PID文件
- * @returns  
+ * @returns
  */
 Server.daemonize = function () {
     const c = this.cfg.main;
+    // 获取主配置，其中包含是否守护化、日志文件路径和PID文件路径等设置
+
     if (!c.daemonize) return;
+    // 如果配置中没有启用守护化（daemonize=false），则直接返回，不执行守护化操作
 
     if (!process.env.__daemon) {
+        // 检查环境变量 __daemon。这个变量通常由 daemon 模块设置，
+        // 用于标识当前进程是否已经是守护进程的子进程。
+        // 如果没有设置，说明当前是初始进程，需要进行守护化操作。
+
         // Remove process.on('exit') listeners otherwise
         // we get a spurious 'Exiting' log entry.
+        // 移除所有 'exit' 事件的监听器，以避免在守护化过程中产生不必要的“Exiting”日志条目
         process.removeAllListeners('exit');
         Server.lognotice('Daemonizing...');
+        // 记录日志，表示正在进行守护化
     }
 
     const log_fd = fs.openSync(c.daemon_log_file, 'a');
+    // 打开或创建守护进程的日志文件（通常是 /var/log/haraka.log），以追加模式写入
+
     daemon({ cwd: process.cwd(), stdout: log_fd });
+    // 调用 'daemon' 模块，执行实际的守护化操作。
+    // 这会使当前进程 fork 出一个子进程，父进程退出，子进程成为会话组长，脱离控制终端。
+    // `cwd` 设置工作目录，`stdout` 将标准输出重定向到指定的日志文件描述符
 
     // We are the daemon from here on...
+    // 从这里开始，代码在守护进程的上下文中执行
+
     const npid = require('npid');
+    // 导入 'npid' 模块，用于创建和管理 PID 文件
+
     try {
         npid.create(c.daemon_pid_file).removeOnExit();
+        // 创建 PID 文件（通常是 /var/run/haraka.pid），其中包含守护进程的进程ID。
+        // `removeOnExit()` 确保当进程正常退出时，PID 文件会被自动删除。
     }
     catch (err) {
         Server.logerror(err.message);
+        // 如果创建 PID 文件失败，记录错误信息
         logger.dump_and_exit(1);
+        // 记录所有缓冲的日志并以错误码 1 退出进程
     }
 }
 
