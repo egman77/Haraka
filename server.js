@@ -117,6 +117,32 @@ Server.daemonize = function () {
     // 导入 'npid' 模块，用于创建和管理 PID 文件
 
     try {
+
+        // 检查PID文件是否存在
+        if(fs.existsSync(c.daemon_pid_file)){
+            //读取PID文件
+            const pid= parseInt(fs.readFileSync(c.daemon_pid_file,'utf8'));
+            //检查该PID是否正在运行
+            try{
+                // 发送0信号，如果进程存在，不会杀死它，但会检查是否存在
+                process.kill(pid,0);
+                // 如果成功，说明进程正在运行
+                Server.logerror(`PID file ${c.daemon_pid_file} alrady exists and process ${pid} is running. Exiting.`);
+                logger.dump_and_exit(1);
+            }catch(err){
+                // 如果错误是ESRCH，表示进程不存在
+                if ( err.code ==='ESRCH'){
+                    Server.lognotice(`Removing stale PID file ${c.daemon_pid_file} (process ${pid} not found).`);
+                    fs.unlinkSync(c.daemon_pid_file);
+                }else{
+                    // 其他错误，比如权限问题，记录错误信息
+                    Server.logerror(`Error checking PID ${pid}: ${err.message}`);
+                    logger.dump_and_exit(1); 
+                }
+            }
+
+        }
+
         Server.lognotice('Create daemon_pid_file...');
         npid.create(c.daemon_pid_file).removeOnExit();
         // 创建 PID 文件（通常是 /var/run/haraka.pid），其中包含守护进程的进程ID。
