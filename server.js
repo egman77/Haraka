@@ -437,13 +437,13 @@ Server.createServer = params => {
 
     // Cluster Workers
     if (!cluster.isMaster) {
-        Server.lognotice(`CreateServer(server.js) is Workers`);
+        Server.lognotice(`CreateServer(server.js) is a Worker`);
 
         Server.setup_smtp_listeners(Server.plugins, 'child', inactivity_timeout);
         return;
     }
     else {
-        Server.lognotice(`CreateServer(server.js)  is Master`);
+        Server.lognotice(`CreateServer(server.js)  is a Master`);
         // console.log("Setting up message handler");
         cluster.on('message', messageHandler);
     }
