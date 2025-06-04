@@ -76,6 +76,7 @@ if (process.pid === 1) signals.push('SIGTERM')
 // 则也处理 SIGTERM 信号，这是容器编排系统用来正常停止容器的信号
 
 for (const sig of signals) {
+    logger.notice(`logger start pdi:${process.pid} in sig:${sig} :========`);
     // 遍历定义的信号列表
     process.on(sig, () => {
         // 为每个信号注册处理器
