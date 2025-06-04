@@ -1,46 +1,56 @@
 #!/usr/bin/env node
 
-// this script takes inspiration from:
+// 此脚本的灵感来源于：
 // https://github.com/tnantoka/LooseLeaf/blob/master/bin/looseleaf
 
-const child = require('node:child_process');
-const fs   = require('node:fs');
-const net  = require('node:net');
-const path = require('node:path');
-const os   = require('node:os');
+// 导入 Node.js 核心模块
+const child = require('node:child_process'); // 用于创建子进程（例如，显示帮助文档）
+const fs   = require('node:fs');   // 文件系统模块，用于文件操作
+const net  = require('node:net');  // 网络模块，用于内部命令通信
+const path = require('node:path'); // 路径处理模块
+const os   = require('node:os');   // 操作系统信息模块 (例如，获取主机名)
 
-const nopt = require('nopt');
-const utils   = require('haraka-utils');
-const sprintf = require('sprintf-js').sprintf;
+// 导入第三方模块
+const nopt = require('nopt'); // 用于解析命令行选项
+const utils   = require('haraka-utils'); // Haraka 的工具函数库
+const sprintf = require('sprintf-js').sprintf; // 用于格式化字符串
+
+// 定义 Haraka 基础路径 (项目根目录)
 const base = path.join(__dirname, '..');
+// 获取 Haraka 版本号
 const ver  = utils.getVersion(base)
+
+// 定义已知的命令行选项及其类型
 const knownOpts = {
-    "version":     Boolean,
-    "verbose":     Boolean,
-    "help":        [String, null],
-    "configs":     path,
-    "install":     path,
-    "list":        Boolean,
-    "plugin":      Array,
-    "force":       Boolean,
-    "qlist":       Boolean,
-    "qstat":       Boolean,
-    "qempty":      Boolean,
-    "qunstick":    [String, null],
-    "graceful":    Boolean,
-    "order":       Boolean,
-    "test":        [String, Array],
-    "ip":          String,
-    "helo":        String,
-    "ehlo":        String,
-    "envfrom":     String,
-    "envrcpt":     [String, Array],
-    "message":     path,
-    "dump-mime":   Boolean,
-    "dump-stream": Boolean,
-    "skip-deny":   Boolean,
-    "set-relay":   Boolean,
+    "version":     Boolean,      // -v, --version: 显示版本号
+    "verbose":     Boolean,      // --verbose: 详细输出 (主要用于队列命令)
+    "help":        [String, null], // -h, --help [NAME]: 显示帮助信息或特定主题的帮助
+    "configs":     path,         // -c, --configs: 指定配置文件目录的路径
+    "install":     path,         // -i, --install: 将默认配置复制到指定目录
+    "list":        Boolean,      // -l, --list: 列出 Haraka 捆绑的插件
+    "plugin":      Array,        // -p, --plugin: 生成具有给定名称的新插件
+    "force":       Boolean,      // -f, --force: 强制覆盖旧文件
+    "qlist":       Boolean,      // --qlist: 列出出站队列
+    "qstat":       Boolean,      // --qstat: 获取出站队列的统计信息
+    "qempty":      Boolean,      // --qempty: 清空出站队列 (未实现)
+    "qunstick":    [String, null], // --qunstick [DOMAIN]: 为给定域强制发送 (解冻) 邮件
+    "graceful":    Boolean,      // --graceful: 优雅重启 Haraka 服务
+    "order":       Boolean,      // -o, --order: 显示所有已注册插件及其运行顺序
+    "test":        [String, Array],// -t, --test [PLUGIN]: 插件测试模式
+    // --- 插件测试模式选项 (均为可选) ---
+    "ip":          String,       // --ip: 测试时使用的 IP 地址
+    "helo":        String,       // --helo: 测试时使用的 HELO 命令
+    "ehlo":        String,       // --ehlo: 测试时使用的 EHLO 命令
+    "envfrom":     String,       // --envfrom: 测试时使用的 MAIL FROM 地址
+    "envrcpt":     [String, Array],// --envrcpt: 测试时使用的 RCPT TO 地址
+    "message":     path,         // --message: 测试时使用的邮件文件路径
+    "dump-mime":   Boolean,      // --dump-mime: 转储 MIME 结构和正文文本
+    "dump-stream": Boolean,      // --dump-stream: 将 MessageStream 转储到标准输出
+    "skip-deny":   Boolean,      // --skip-deny: 在 DENY/DENYSOFT 后继续运行钩子
+    "set-relay":   Boolean,      // --set-relay: 设置 connection.relaying 为 true
 }
+
+// 定义短选项别名
 const shortHands = {
     "v": ["--version"],
     "h": ["--help"],
@@ -52,8 +62,12 @@ const shortHands = {
     "o": ["--order"],
     "t": ["--test"],
 }
+
+// 解析命令行参数
+// process.argv.slice(2) 会获取除了 'node' 和脚本路径之外的所有参数
 const parsed = nopt(knownOpts, shortHands, process.argv, 2);
 
+// 定义帮助信息字符串
 const usage = `\x1B[32;40mHaraka.js\x1B[0m — A Node.js Email Server project
 Usage: haraka [options] [path]
 Options:
@@ -83,89 +97,113 @@ Options:
     --set-relay   \t\tSet connection.relaying
 `;
 
+// 函数：列出插件
+// b: 基础路径 (默认为 Haraka 项目根目录)
+// dir: 插件目录 (默认为 'plugins/')
 function listPlugins (b, dir = 'plugins/') {
 
-    const inital_dir = path.join((b ?? base), dir);
-    const plugin_dirs = [ inital_dir ]
+    const inital_dir = path.join((b ?? base), dir); // 获取插件目录的绝对路径
+    const plugin_dirs = [ inital_dir ] // 初始化插件目录数组
 
+    // 遍历初始插件目录，查找子目录 (用于组织插件)
     for (const d of fs.readdirSync(inital_dir)) {
         if (fs.statSync(path.join(inital_dir, d)).isDirectory()) {
             plugin_dirs.push(path.join(inital_dir, d));
         }
     }
 
-    let plugin_list = ``
+    let plugin_list = `` // 初始化插件列表字符串
+    // 遍历所有插件目录
     for (const pd of plugin_dirs) {
-        plugin_list += `\n${pd.match(/plugins.*$/)[0]}\n`;
+        plugin_list += `\n${pd.match(/plugins.*$/)[0]}\n`; // 添加目录名到列表
 
+        // 遍历目录中的文件
         for (const d of fs.readdirSync(pd)) {
+            // 如果是 .js 文件，则添加到插件列表 (移除 .js 后缀)
             if (fs.statSync(path.join(pd, d)).isFile() && ~d.search('.js')) {
                 plugin_list += `\t${d.replace('.js', '')}\n`;
             }
         }
     }
 
+    // 列出通过 NPM 安装的 Haraka 插件
     plugin_list += `\nNPM packages (${b ?? base})\n`
     const npm_plugins = []
+    // 遍历 node_modules 目录
     for (const entry of fs.readdirSync(path.join(b ?? base, 'node_modules'))) {
+        // 如果包名以 'haraka-plugin-' 开头，则认为是 NPM 插件
         if (!/^haraka-plugin-/.test(entry)) continue
-        npm_plugins.push(entry.split('-').slice(2).join('-'))
+        npm_plugins.push(entry.split('-').slice(2).join('-')) //提取插件名
     }
     plugin_list += `\t${npm_plugins.join('\n\t')}\n`
 
-    return plugin_list;
+    return plugin_list; // 返回插件列表字符串
 }
 
-// Warning messsage
+// 函数：显示警告信息
 function warning (msg) {
     console.error(`\x1b[31mwarning\x1b[0m: ${msg}`);
 }
 
+// 函数：显示错误信息并退出程序
 function fail (msg) {
     console.error(`\x1b[31merror\x1b[0m: ${msg}`);
-    process.exit(-1);
+    process.exit(-1); // 以错误码 -1 退出
 }
 
+// 函数：设置主机名相关的配置文件 (me, host_list)
+// confPath: 配置目录路径
 function setupHostname (confPath) {
-    utils.mkDir(confPath);
+    utils.mkDir(confPath); // 确保配置目录存在
 
-    const hostname = `${os.hostname()}${os.EOL}`;
+    const hostname = `${os.hostname()}${os.EOL}`; // 获取当前系统主机名
 
     ['me','host_list'].forEach(f => {
-        const cfPath = path.join(confPath, f);
+        const cfPath = path.join(confPath, f); // 构建配置文件路径
 
+        // 如果文件已存在，则不进行任何操作
         try { if (fs.statSync(cfPath).isFile()) return; }
-        catch (ignore) { }
+        catch (ignore) { } // 忽略 statSync 可能抛出的错误 (例如文件不存在)
 
+        // 尝试写入主机名到配置文件
         try { fs.writeFileSync(cfPath, hostname); }
         catch (err) { warning(`Unable to write to config/${f}: ${err.message}`); }
     })
 }
 
+// 函数：设置基础配置文件 (复制默认配置到指定配置目录)
+// confPath: 配置目录路径
 function setupBaseConfig (confPath) {
+    // 复制 connection.ini, smtp.ini, log.ini, plugins 文件
     utils.copyFile(path.join(base, 'config', 'connection.ini'), path.join(confPath, 'connection.ini'));
     utils.copyFile(path.join(base, 'config', 'smtp.ini'), path.join(confPath, 'smtp.ini'));
     utils.copyFile(path.join(base, 'config', 'log.ini'),  path.join(confPath, 'log.ini'));
     utils.copyFile(path.join(base, 'config', 'plugins'),  path.join(confPath, 'plugins'));
 }
 
+// 函数：设置 Node.js 的模块加载路径
+// 目的是让 Haraka 能够加载位于配置目录下的 node_modules 中的模块
 function setupRequire () {
-
+    // 将配置目录路径存入环境变量 HARAKA
     process.env.HARAKA = parsed.configs;
     try {
+        // 尝试将配置目录下的 node_modules 添加到 require.paths (旧版 Node.js)
         require.paths.push(path.join(process.env.HARAKA, 'node_modules'));
     }
     catch (e) {
+        // 如果 require.paths 不可用 (新版 Node.js)，则修改 NODE_PATH 环境变量
         process.env.NODE_PATH = process.env.NODE_PATH ?
             (`${process.env.NODE_PATH}:${path.join(process.env.HARAKA, 'node_modules')}`)
             :
             (path.join(process.env.HARAKA, 'node_modules'));
-        require('module')._initPaths(); // Horrible hack
+        require('module')._initPaths(); // 强制 Node.js 重新初始化模块路径 (这是一个 hack)
     }
 }
 
+// 空操作函数，用作某些情况下的回调或禁用日志等
 function noop () {}
 
+// README 文件内容模板，用于 haraka -i (安装) 命令
 const readme = `Haraka
 
 Congratulations on creating a new installation of Haraka.
@@ -195,6 +233,7 @@ a core Haraka module, such as 'Connection' or 'Transaction'.
 To get documentation on writing a plugin type 'haraka -h Plugins'.
 `;
 
+// package.json 文件内容模板，用于 haraka -i (安装) 命令
 const packageJson = JSON.stringify({
     "name": "haraka_local",
     "description": "An SMTP Server",
@@ -204,6 +243,7 @@ const packageJson = JSON.stringify({
     "license": "MIT"
 }, null, 2);
 
+// 新插件的 JavaScript 文件内容模板
 const plugin_src = [
     "// %plugin%",
     "",
@@ -214,6 +254,7 @@ const plugin_src = [
     "",
 ].join("\n");
 
+// 新插件的 Markdown 文档内容模板
 const plugin_doc = [
     "%plugin%",
     "========",
@@ -227,37 +268,45 @@ const plugin_doc = [
     "",
 ].join("\n");
 
-
-function getHooks () {   // see haraka/Haraka#3306
+// 函数：从 Plugins.md 文档中获取所有可用的钩子名称
+function getHooks () {   // 参见 haraka/Haraka#3306
+    // 构建 Plugins.md 文件的绝对路径 (优先使用配置目录下的文档)
     const pi_path = path.resolve(parsed.configs, 'docs', 'Plugins.md')
     return fs.readFileSync(pi_path).toString()
-        .split('## Available Hooks')[1]    // discard everything before this string
-        .split('### rcpt')[0]              // discard everything after this string
-        .match(/\*\s(\S+)/gm)              // grab the first word of lines starting with '* '
-        .map(a => a.replace(/^\* /, '').replace(/\\/g, '')) // strip list prefix and escapes
+        .split('## Available Hooks')[1]    // 获取 "## Available Hooks"之后的内容
+        .split('### rcpt')[0]              // 获取 "### rcpt"之前的内容 (即钩子列表部分)
+        .match(/\*\s(\S+)/gm)              // 匹配以 "* "开头的行，并捕获第一个单词 (钩子名)
+        .map(a => a.replace(/^\* /, '').replace(/\\/g, '')) // 去除 "* "前缀和转义字符
 }
 
-let config;
-let logger;
-let outbound;
-let plugins;
-if (parsed.version) {
+// 声明将在后续逻辑中使用的变量
+let config;  // Haraka 配置对象
+let logger;  // Haraka 日志记录器
+let outbound; // Haraka 出站邮件处理模块
+let plugins; // Haraka 插件管理器
+
+// 根据解析的命令行参数执行不同的操作
+if (parsed.version) { // 如果是 -v 或 --version
     console.log(`\x1B[32;40mHaraka.js\x1B[0m — Version: ${ver}`);
 }
-else if (parsed.list) {
+else if (parsed.list) { // 如果是 -l 或 --list
+    // 列出全局插件 (Haraka 自带的)
     console.log(`\x1B[32;40m*global\x1B[0m\n${ listPlugins() }`);
+    // 如果指定了配置目录 (-c)，则列出本地插件 (用户配置目录下的)
     if (parsed.configs) {
         console.log(`\x1B[32;40m*local\x1B[0m\n${ listPlugins(parsed.configs) }`);
     }
 }
-else if (parsed.help) {
-    if (parsed.help === 'true') {
-        console.log(usage);
+else if (parsed.help) { // 如果是 -h 或 --help
+    if (parsed.help === 'true') { // 如果是 'haraka -h' (没有指定主题)
+        console.log(usage); // 显示通用帮助信息
         return
     }
 
+    // 尝试查找特定主题的帮助文档 (Markdown 文件)
     let md_path;
     const md_paths = [
+        // 优先查找顺序：用户配置目录 -> Haraka 核心目录 -> NPM 插件目录
         path.join(base, 'docs', `${parsed.help}.md`),
         path.join(base, 'docs', 'plugins', `${parsed.help}.md`),
         path.join(base, 'docs', 'deprecated', `${parsed.help}.md`),
@@ -269,15 +318,16 @@ else if (parsed.help) {
     }
     for (let i=0, j=md_paths.length; i<j; i++) {
         const _md_path = md_paths[i];
-        if (fs.existsSync(_md_path)) {
+        if (fs.existsSync(_md_path)) { // 如果找到文档文件
             md_path = [_md_path];
             break;
         }
     }
-    if (!md_path) {
+    if (!md_path) { // 如果未找到文档
         warning(`No documentation found for: ${parsed.help}`);
         process.exit();
     }
+    // 使用 less 或 PAGER 环境变量指定的程序来显示 Markdown 文档
     let pager = 'less';
     if (process.env.PAGER) {
         const pager_split = process.env.PAGER.split(/ +/);
@@ -285,12 +335,13 @@ else if (parsed.help) {
         md_path = pager_split.concat(md_path);
     }
 
-    const less  = child.spawn( pager, md_path, { stdio: 'inherit' } );
-    less.on('exit', function () {
+    const less  = child.spawn( pager, md_path, { stdio: 'inherit' } ); // 启动子进程显示文档
+    less.on('exit', function () { // 文档查看器退出后，主进程也退出
         process.exit(0);
     });
 }
-else if (parsed.configs && parsed.plugin) {
+else if (parsed.configs && parsed.plugin) { // 如果是 -c <config_dir> -p <plugin_name> (创建插件)
+    // 构建新插件的 JS 文件路径和文档文件路径
     const js_path = path.join(parsed.configs, 'plugins', `${parsed.plugin}.js`);
     utils.createFile(js_path, plugin_src, { plugin: parsed.plugin, config: parsed.configs}, parsed.force);
 
@@ -302,79 +353,81 @@ else if (parsed.configs && parsed.plugin) {
     console.log(`Add the plugin to config:  ${path.join(parsed.configs, 'config', 'plugins')}`);
     console.log(`And edit documentation in: ${doc_path}`);
 }
-else if (parsed.qlist) {
-    if (!parsed.configs) fail("qlist option requires config path");
-    process.env.HARAKA = parsed.configs;
-    logger = require(path.join(base, 'logger'));
-    if (!parsed.verbose) logger.log = noop // disable logging
-    outbound = require(path.join(base, 'outbound'));
-    outbound.list_queue(function (err, qlist) {
+else if (parsed.qlist) { // 如果是 --qlist (列出队列)
+    if (!parsed.configs) fail("qlist option requires config path"); // 必须指定配置目录
+    process.env.HARAKA = parsed.configs; // 设置 HARAKA 环境变量
+    logger = require(path.join(base, 'logger')); // 加载日志模块
+    if (!parsed.verbose) logger.log = noop // 如果不是 verbose 模式，则禁用日志输出
+    outbound = require(path.join(base, 'outbound')); // 加载出站邮件模块
+    outbound.list_queue(function (err, qlist) { // 调用 list_queue 方法
         for (const todo of qlist) {
             console.log(sprintf("Q: %s rcpt:%d from:%s domain:%s", todo.file, todo.rcpt_to.length, todo.mail_from.toString(), todo.domain));
         }
-        process.exit();
+        process.exit(); // 完成后退出
     })
 }
-else if (parsed.qstat) {
+else if (parsed.qstat) { // 如果是 --qstat (队列统计)
     if (!parsed.configs) fail("qstat option requires config path");
 
     process.env.HARAKA = parsed.configs;
     logger = require(path.join(base, "logger"));
-    if (!parsed.verbose) logger.log = noop // disable logging
+    if (!parsed.verbose) logger.log = noop
     outbound = require(path.join(base, "outbound"));
     outbound.stat_queue(function (err, stats) {
         console.log(stats);
         process.exit();
     });
 }
-else if (parsed.qunstick) {
+else if (parsed.qunstick) { // 如果是 --qunstick (解冻邮件)
     if (!parsed.configs) fail('qunstick option requires config path');
-    const domain = parsed.qunstick.toLowerCase();
+    const domain = parsed.qunstick.toLowerCase(); // 获取要解冻的域名 (或 'true' 表示所有)
     process.env.HARAKA = parsed.configs;
     logger = require(path.join(base, 'logger'));
-    if (!parsed.verbose) logger.log = noop // disable logging
-    const cb = function () { process.exit(); }
+    if (!parsed.verbose) logger.log = noop
+    const cb = function () { process.exit(); } // 定义回调，在操作完成后退出
     if (domain == 'true') {
-        send_internal_command('flushQueue', cb);
+        send_internal_command('flushQueue', cb); // 发送内部命令 'flushQueue'
     }
     else {
-        send_internal_command(`flushQueue ${domain}`, cb);
+        send_internal_command(`flushQueue ${domain}`, cb); // 发送内部命令 'flushQueue <domain>'
     }
 }
-else if (parsed.graceful) {
+else if (parsed.graceful) { // 如果是 --graceful (优雅重启)
     if (!parsed.configs) fail("graceful option requires config path");
 
     process.env.HARAKA = parsed.configs;
     logger = require(path.join(base, 'logger'));
-    if (!parsed.verbose) logger.log = noop // disable logging
-    config = require('haraka-config');
+    if (!parsed.verbose) logger.log = noop
+    config = require('haraka-config'); // 加载配置模块
+    // 优雅重启需要 smtp.ini 中配置了 nodes (集群模式)
     if (!config.get("smtp.ini").main.nodes) {
         console.log("Graceful restart not possible without `nodes` value in smtp.ini");
         process.exit();
     }
     else {
-        send_internal_command('gracefulRestart', () => {
+        send_internal_command('gracefulRestart', () => { // 发送内部命令 'gracefulRestart'
             process.exit();
         });
     }
 }
-else if (parsed.qempty) {
+else if (parsed.qempty) { // 如果是 --qempty (清空队列)
     if (!parsed.configs) fail('qempty option requires config path');
-    fail('qempty is unimplemented');
+    fail('qempty is unimplemented'); // 此功能未实现
 }
-else if (parsed.order) {
+else if (parsed.order) { // 如果是 -o 或 --order (显示插件顺序)
     if (!parsed.configs) fail('order option requires config path');
-    setupRequire();
+    setupRequire(); // 设置模块加载路径
     logger = require(path.join(base, 'logger'));
-    if (!parsed.verbose) logger.log = noop // disable logging
-    plugins = require(path.join(base, 'plugins'));
-    plugins.load_plugins();
+    if (!parsed.verbose) logger.log = noop
+    plugins = require(path.join(base, 'plugins')); // 加载插件管理器
+    plugins.load_plugins(); // 加载所有插件
     console.log('');
-    for (const hook of getHooks()) {
-        if (!plugins.registered_hooks[hook]) continue;
+    for (const hook of getHooks()) { // 遍历所有已知的钩子
+        if (!plugins.registered_hooks[hook]) continue; // 如果此钩子没有注册任何插件，则跳过
         console.log(sprintf('%\'--80s', `Hook: ${hook} `));
         console.log(sprintf('%-35s %-35s %-4s %-3s', 'Plugin', 'Method', 'Prio', 'T/O'));
         console.log(sprintf("%'-80s",''));
+        // 遍历注册到此钩子的所有插件项
         for (let p=0; p<plugins.registered_hooks[hook].length; p++) {
             const item = plugins.registered_hooks[hook][p];
             console.log(sprintf('%-35s %-35s %4d %3d', item.plugin, item.method, item.priority, item.timeout));
@@ -383,102 +436,123 @@ else if (parsed.order) {
     }
     process.exit();
 }
-else if (parsed.test) {
+else if (parsed.test) { // 如果是 -t 或 --test (插件测试模式)
     if (!parsed.configs) fail("test option requires config path");
 
-    setupRequire();
+    setupRequire(); // 设置模块加载路径
 
     logger = require(path.join(base, 'logger'));
-    logger.loglevel = logger.levels.PROTOCOL;
+    logger.loglevel = logger.levels.PROTOCOL; // 将日志级别设置为 PROTOCOL 以进行详细调试
 
-    // Attempt to load message early
+    // 尝试提前加载测试邮件内容 (如果通过 --message 指定了)
     let msg;
     if (parsed.message) {
         try {
             msg = fs.readFileSync(parsed.message);
         }
         catch (e) {
-            logger.crit(e.message);
+            // 如果读取邮件文件失败，记录错误并退出
             logger.dump_logs(1);
         }
     }
 
+    // 加载插件管理器和相关模块
     plugins = require(path.join(base, "plugins"));
-    plugins.server = { notes: {} };
+    plugins.server = { notes: {} }; // 模拟 server 对象的部分属性
+    // 加载插件，如果指定了特定插件进行测试，则只加载该插件，否则加载所有插件
     plugins.load_plugins((parsed.test && parsed.test[0] !== 'all') ? parsed.test : null);
-    const Connection = require(path.join(base, "connection"));
-    // var Transaction = require(path.join(base, "transaction"));
-    const Address = require('address-rfc2821').Address;
-    const Notes = require('haraka-notes');
-    const constants = require('haraka-constants');
+    const Connection = require(path.join(base, "connection")); // Haraka 连接对象
+    // var Transaction = require(path.join(base, "transaction")); // Haraka 事务对象 (此处注释掉了，可能未使用)
+    const Address = require('address-rfc2821').Address; // RFC2821 地址解析库
+    const Notes = require('haraka-notes'); // Haraka 内部笔记/元数据存储
+    const constants = require('haraka-constants'); // Haraka 常量定义
+
+    // 模拟一个客户端连接对象
     const client = {
         remote: {
-            address: ((parsed.ip) ? parsed.ip : '1.2.3.4'),
-            port: 1234,
+            address: ((parsed.ip) ? parsed.ip : '1.2.3.4'), // 使用 --ip 指定的 IP，否则默认为 '1.2.3.4'
+            port: 1234, // 默认远程端口
         },
-        destroy () {},
-        on (event) {},
-        end () {
+        destroy () {}, // 空操作
+        on (event) {},  // 空操作
+        end () { // 当连接结束时，退出测试进程
             process.exit();
         },
-        write (buf) {},
-        resume () {},
-        pause () {},
+        write (buf) {}, // 空操作
+        resume () {},   // 空操作
+        pause () {},    // 空操作
     }
+    // 模拟一个服务器对象
     const server = {
-        address () {
+        address () { // 返回服务器监听地址信息
             return { port: 25, family: 'ipv4', address: '127.0.0.1' };
         },
-        cfg  : require('haraka-config').get('smtp.ini'),
-        notes: new Notes(),
+        cfg  : require('haraka-config').get('smtp.ini'), // 加载 smtp.ini 配置
+        notes: new Notes(), // 初始化服务器级别的 notes
     }
+    // 创建一个模拟的 Connection 实例
     const connection = Connection.createConnection(client, server, server.cfg);
-    if (parsed['set-relay']) connection.relaying = true;
+    if (parsed['set-relay']) connection.relaying = true; // 如果指定了 --set-relay，则设置连接为中继模式
 
+    // 定义一个函数，用于在插件钩子执行后决定是否继续执行下一个钩子
     const run_next_hook = function () {
-        const args = Array.prototype.slice.call(arguments);
-        const code = args.shift();
+        const args = Array.prototype.slice.call(arguments); // 获取所有参数
+        const code = args.shift(); // 第一个参数是上一个钩子的返回码
+        // 如果未指定 --skip-deny 且上一个钩子返回 DENY 或 DENYSOFT，则执行 quit 钩子并终止流程
         if (!parsed['skip-deny'] && code !== constants.ok && code !== constants.cont) {
             plugins.run_hooks('quit', connection);
         }
         else {
+            // 否则，继续执行后续的钩子
             plugins.run_hooks.apply(this, args);
         }
     }
 
+    // 模拟 SMTP 协议的各个阶段，并触发相应的插件钩子
+    // connect 阶段完成后的回调
     connection.connect_respond = function () {
         let helo = 'test.example.com';
         let mode = 'ehlo';
-        if (parsed.ehlo) {
+        if (parsed.ehlo) { // 如果指定了 --ehlo
             helo = parsed.ehlo;
         }
-        else if (parsed.helo) {
+        else if (parsed.helo) { // 如果指定了 --helo
             helo = parsed.helo;
             mode = 'helo';
         }
-        connection.hello.host = helo;
+        connection.hello.host = helo; // 设置连接的 HELO/EHLO 主机名
+        // 触发 helo 或 ehlo 钩子
         run_next_hook(arguments[0], mode, connection, helo);
     }
+    // helo/ehlo 阶段完成后的回调
     connection.helo_respond = connection.ehlo_respond = function () {
         const args = arguments;
+        // 使用 --envfrom 指定的 MAIL FROM 地址，否则默认为 'test@example.com'
         const mail = new Address(((parsed.envfrom) ? parsed.envfrom : 'test@example.com'));
-        connection.init_transaction(function () {
-            connection.transaction.mail_from = mail;
+        connection.init_transaction(function () { // 初始化一个新的事务
+            connection.transaction.mail_from = mail; // 设置事务的发件人
+            // 触发 mail 钩子
             run_next_hook(args[0], 'mail', connection, [mail, null]);
         });
     }
+    // mail 阶段完成后的回调
     connection.mail_respond = function () {
+        // 使用 --envrcpt 指定的 RCPT TO 地址，否则默认为 'test@example.com'
         const rcpt = new Address(((parsed.envrcpt) ? parsed.envrcpt : 'test@example.com'));
-        this.transaction.rcpt_to.push(rcpt);
+        this.transaction.rcpt_to.push(rcpt); // 将收件人添加到事务中
+        // 触发 rcpt 钩子
         run_next_hook(arguments[0], 'rcpt', connection, [rcpt, null]);
     }
+    // rcpt 阶段完成后的回调
     connection.rcpt_respond = function () {
-        connection.transaction.parse_body = true;
+        connection.transaction.parse_body = true; // 标记需要解析邮件体
+        // 触发 data 钩子
         run_next_hook(arguments[0], 'data', connection);
     }
+    // data 阶段完成后的回调 (客户端发送 DATA 命令后)
     connection.data_respond = function () {
         const args = arguments;
-        // Add data to stream
+        // 将邮件内容 (如果通过 --message 指定) 添加到事务的数据流中
         if (msg) {
             let buf = msg;
             let offset;
@@ -492,16 +566,19 @@ else if (parsed.test) {
             }
         }
         else {
-            // Add empty data to initialize message_stream
+            // 如果没有指定邮件内容，则添加空数据以初始化 message_stream
             connection.transaction.add_data('');
         }
+        // 邮件数据接收完成后的处理
         connection.data_done(function () {
+            // 触发 data_post 钩子 (邮件内容接收完毕后)
             run_next_hook(args[0], 'data_post', connection);
         });
     }
+    // data_post 阶段完成后的回调
     connection.data_post_respond = function () {
         const args = arguments;
-        // Dump MIME structure and decoded body text?
+        // 如果指定了 --dump-mime，则打印邮件的 MIME 结构和解码后的正文
         function dump_mime_structure (body) {
             console.log(`Found MIME part ${body.ct}`);
             console.log(body.bodytext);
@@ -512,33 +589,43 @@ else if (parsed.test) {
         if (parsed['dump-mime']) {
             dump_mime_structure(connection.transaction.body);
         }
+        // 如果指定了 --dump-stream，则将邮件流直接输出到 stdout
         if (parsed['dump-stream']) {
             console.log('STREAM:');
             connection.transaction.message_stream.on('end', function () {
+                // 流结束后，触发 queue 钩子
                 run_next_hook(args[0], 'queue', connection);
             });
             connection.transaction.message_stream.pipe(process.stdout);
         }
         else {
+            // 否则，直接触发 queue 钩子
             run_next_hook(args[0], 'queue', connection);
         }
     }
+    // queue 阶段完成后的回调
     connection.queue_respond = function () {
+        // 触发 queue_ok 钩子
         run_next_hook(arguments[0], 'queue_ok', connection);
     }
+    // queue_ok 阶段完成后的回调
     connection.queue_ok_respond = function () {
+        // 触发 quit 钩子，结束测试流程
         run_next_hook(arguments[0], 'quit', connection);
     }
 }
-else if (parsed.configs) {
-    const haraka_path = path.join(base, 'haraka.js');
+else if (parsed.configs) { // 如果指定了 -c <config_dir> (并且不是其他特定命令，如 -t, -o, --qlist 等)
+    // 这是 Haraka 正常启动的入口
+    const haraka_path = path.join(base, 'haraka.js'); // Haraka 核心启动脚本的路径
 
-    const base_dir = process.argv[3];
+    const base_dir = process.argv[3]; // 通常是配置目录的路径 (haraka -c /path/to/config)
     const err_msg = `Did you install a Haraka config? (haraka -i ${base_dir })`;
+    // 检查配置目录是否存在
     if (!fs.existsSync(base_dir)) {
         fail( `No such directory: ${base_dir}\n${err_msg}` );
     }
 
+    // 检查核心配置文件 smtp.ini (或 .json, .yaml) 是否存在
     const smtp_ini_path = path.join(base_dir,'config','smtp.ini');
     const smtp_json = path.join(base_dir,'config','smtp.json');
     const smtp_yaml = path.join(base_dir,'config','smtp.yaml');
@@ -546,49 +633,65 @@ else if (parsed.configs) {
         fail( `No smtp.ini at: ${smtp_ini_path}\n${err_msg}` );
     }
 
+    // 修改 process.argv[1] 为 haraka.js 的路径，这样 Node.js 就会执行 haraka.js
     process.argv[1] = haraka_path;
+    // 设置 HARAKA 环境变量，供 haraka.js 和其他模块使用
     process.env.HARAKA = parsed.configs;
+    // 加载并执行 Haraka 核心启动脚本
     require(haraka_path);
 }
-else if (parsed.install) {
-    const pa = parsed.install;
-    utils.mkDir(parsed.install);
+else if (parsed.install) { // 如果是 -i <path> (安装 Haraka 配置)
+    const pa = parsed.install; // 获取安装路径
+    utils.mkDir(parsed.install); // 创建安装目录
+    // 创建 plugins, docs, config 子目录
     for (const d of ['plugins', 'docs', 'config']) {
         utils.mkDir(path.join(pa, d));
     }
+    // 复制核心 Plugins.md 文档
     utils.copyFile(path.join(base, 'docs', 'Plugins.md'), path.join(pa, 'docs', 'Plugins.md'));
+    // 创建 README 文件
     utils.createFile(path.join(pa, 'README'), readme, {}, parsed.force);
+    // 创建 package.json 文件
     utils.createFile(path.join(pa, 'package.json'), packageJson, {}, parsed.force);
+    // 生成并保存内部命令通信密钥
     const bytes = require('crypto').randomBytes(32);
     utils.createFile(path.join(pa, 'config', 'internalcmd_key'), bytes.toString('hex'), {}, parsed.force);
+    // 设置主机名相关配置 (me, host_list)
     setupHostname(path.join(pa, 'config'));
+    // 设置基础配置文件 (connection.ini, smtp.ini, log.ini, plugins)
     setupBaseConfig(path.join(pa, 'config'));
 }
-else {
+else { // 如果没有匹配的参数或参数错误
     console.log("\033[31;40mError\033[0m: Undefined or erroneous arguments\n");
-    console.log(usage);
+    console.log(usage); // 显示帮助信息
 }
 
+// 函数：发送内部命令到正在运行的 Haraka 实例
+// 用于 --qunstick 和 --graceful 命令
 function send_internal_command (cmd, done) {
-    config = require('haraka-config');
-    const key = config.get("internalcmd_key");
-    const smtp_ini = config.get("smtp.ini");
+    config = require('haraka-config'); // 加载配置
+    const key = config.get("internalcmd_key"); // 获取内部命令密钥
+    const smtp_ini = config.get("smtp.ini"); // 获取 smtp.ini 配置
+    // 获取 Haraka 监听的地址和端口 (通常是第一个)
     const listen_addrs = require(path.join(base, "server")).get_listen_addrs(smtp_ini.main);
-    const hp = /^\[?([^\]]+)\]?:(\d+)$/.exec(listen_addrs[0]);
+    const hp = /^\[?([^\]]+)\]?:(\d+)$/.exec(listen_addrs[0]); // 解析地址和端口
     if (!hp) throw "No listen address in smtp.ini";
     // console.log("Connecting to " + listen_addrs[0]);
+    // 通过 TCP 连接到 Haraka 实例
     const sock = net.connect(hp[2], hp[1], function () {
         sock.once('data', function (data) {
-            // this is the greeting. Ignore it...
+            // 接收到服务器的欢迎信息，忽略它
+            // 发送内部命令，如果配置了密钥，则包含密钥
             sock.write(`INTERNALCMD ${key ? (`key:${key} `) : ''}${cmd}\r\n`);
             sock.once('data', function (data2) {
+                // 接收命令执行结果并打印
                 console.log(data2.toString().replace(/\r?\n$/, ''));
-                sock.write('QUIT\r\n');
+                sock.write('QUIT\r\n'); // 发送 QUIT 命令关闭连接
                 sock.once('data', function (data3) {
-                    sock.end();
+                    sock.end(); // 结束套接字
                 })
             });
         });
     });
-    sock.on('end', done);
+    sock.on('end', done); // 连接结束后调用回调函数 (通常是 process.exit)
 }
