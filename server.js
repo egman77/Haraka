@@ -153,6 +153,8 @@ Server.daemonize = function () {
            // 检查PID文件是否存在
         if(fs.existsSync(c.daemon_pid_file)){
             Server.logerror(`PID file ${c.daemon_pid_file} still exists...`);
+        }else{
+            Server.logerror(`PID file ${c.daemon_pid_file} be removed...`);  
         }
     }
     catch (err) {
