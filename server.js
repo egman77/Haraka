@@ -99,9 +99,11 @@ Server.daemonize = function () {
         // 记录日志，表示正在进行守护化
     }
 
+    Server.lognotice('Open daemon log file...');
     const log_fd = fs.openSync(c.daemon_log_file, 'a');
     // 打开或创建守护进程的日志文件（通常是 /var/log/haraka.log），以追加模式写入
 
+    Server.lognotice('call daemon module...');
     daemon({ cwd: process.cwd(), stdout: log_fd });
     // 调用 'daemon' 模块，执行实际的守护化操作。
     // 这会使当前进程 fork 出一个子进程，父进程退出，子进程成为会话组长，脱离控制终端。
@@ -110,16 +112,18 @@ Server.daemonize = function () {
     // We are the daemon from here on...
     // 从这里开始，代码在守护进程的上下文中执行
 
+    Server.lognotice('Import npid module...');
     const npid = require('npid');
     // 导入 'npid' 模块，用于创建和管理 PID 文件
 
     try {
+        Server.lognotice('Create daemon_pid_file...');
         npid.create(c.daemon_pid_file).removeOnExit();
         // 创建 PID 文件（通常是 /var/run/haraka.pid），其中包含守护进程的进程ID。
         // `removeOnExit()` 确保当进程正常退出时，PID 文件会被自动删除。
     }
     catch (err) {
-        Server.logerror(err.message);
+        Server.logerror('catch err: '+err.message);
         // 如果创建 PID 文件失败，记录错误信息
         logger.dump_and_exit(1);
         // 记录所有缓冲的日志并以错误码 1 退出进程
