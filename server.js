@@ -641,91 +641,129 @@ Server.setup_http_listeners = async () => {
     app.use(Server.handle404);
 }
 
+/**
+ * 当主进程初始化完成并返回结果时调用此函数。
+ * 它负责处理初始化结果，并根据是否启用集群模式来启动工作进程或加载队列。
+ * @param {number} retval - 初始化结果，通常是 `constants.ok` 或 `constants.cont`。
+ * @param {string} msg - 相关的消息（如果有）。
+ */
 Server.init_master_respond = (retval, msg) => {
+    // 如果初始化结果不是成功（ok）或继续（cont），则记录错误并退出进程。
     if (!(retval === constants.ok || retval === constants.cont)) {
         Server.logerror(`init_master returned error${((msg) ? `: ${msg}` : '')}`);
         return logger.dump_and_exit(1);
     }
 
-    const c = Server.cfg.main;
-    Server.ready = 1;
+    Server.lognotice(`master init complete,starting workers... retval:${retval} ,msg:${msg}`);
 
-    // Load the queue if we're just one process
+    const c = Server.cfg.main; // 获取主配置，包含集群节点数等信息。
+    Server.ready = 1; // 设置服务器状态为“就绪”。
+
+    // 如果未启用集群模式（即 `cluster` 对象不存在或配置的节点数为0），
+    // 则直接加载出站队列并设置HTTP监听器。
     if (!(cluster && c.nodes)) {
-        outbound.load_queue();
-        Server.setup_http_listeners();
+        outbound.load_queue(); // 加载出站邮件队列。
+        Server.setup_http_listeners(); // 设置HTTP监听器（例如用于管理界面或API）。
         return;
     }
 
-    // Running under cluster, fork children here, so that
-    // cluster events can be registered in init_master hooks.
+    // 如果在集群模式下运行，则在此处派生子工作进程，
+    // 以便在 `init_master` 钩子中注册集群事件。
     outbound.scan_queue_pids((err, pids) => {
+        // 扫描出站队列的PID文件，以处理可能存在的旧队列。
         if (err) {
             Server.logcrit("Scanning queue failed. Shutting down.");
             return logger.dump_and_exit(1);
         }
-        Server.daemonize();
-        // Fork workers
+        Server.daemonize(); // 将主进程转换为守护进程（如果配置允许）。
+        // 派生工作进程。
+        // 根据配置（'cpus'表示使用CPU核心数，否则使用指定节点数）确定要创建的工作进程数量。
         const workers = (c.nodes === 'cpus') ? os.cpus().length : c.nodes;
         const new_workers = [];
         for (let i=0; i<workers; i++) {
+            // 派生新的工作进程，并传递主进程的PID。
             new_workers.push(cluster.fork({ CLUSTER_MASTER_PID: process.pid }));
         }
+        // 将扫描到的队列PID分配给新的工作进程，实现队列的负载均衡。
         for (let j=0; j<pids.length; j++) {
             new_workers[j % new_workers.length]
                 .send({event: 'outbound.load_pid_queue', data: pids[j]});
         }
+        // 监听 'online' 事件：当工作进程启动并在线时触发。
         cluster.on('online', worker => {
             Server.lognotice(
                 'worker started',
                 { worker: worker.id, pid: worker.process.pid }
             );
         });
+        // 监听 'listening' 事件：当工作进程开始监听端口时触发。
         cluster.on('listening', (worker, address) => {
             Server.lognotice(`worker ${worker.id} listening on ${endpoint(address)}`);
         });
+        // 监听 'exit' 事件：当工作进程退出时触发，并调用 `cluster_exit_listener` 处理。
         cluster.on('exit', cluster_exit_listener);
     });
 }
 
+/**
+ * 集群工作进程退出时的监听器。
+ * 负责处理工作进程的异常退出，并尝试重启它们以保持服务可用性。
+ * @param {object} worker - 退出的工作进程对象。
+ * @param {number} code - 退出码（如果正常退出通常为0）。
+ * @param {string} signal - 导致进程终止的信号（如果有）。
+ */
 function cluster_exit_listener (worker, code, signal) {
+    // 如果工作进程被信号杀死，记录信号信息。
     if (signal) {
         Server.lognotice(`worker ${worker.id} killed by signal ${signal}`);
     }
+    // 如果工作进程非正常退出（退出码不为0），记录错误码。
     else if (code !== 0) {
         Server.lognotice(`worker ${worker.id} exited with error code: ${code}`);
     }
+    // 如果工作进程因信号或非零退出码而终止，则尝试重启它。
     if (signal || code !== 0) {
-        // Restart worker
+        // 重启工作进程。
         const new_worker = cluster.fork({
-            CLUSTER_MASTER_PID: process.pid
+            CLUSTER_MASTER_PID: process.pid // 传递主进程PID给新工作进程。
         });
+        // 将旧工作进程的队列PID发送给新工作进程，以便其接管处理。
         new_worker.send({
             event: 'outbound.load_pid_queue', data: worker.process.pid,
         });
     }
 }
 
+/**
+ * 当子工作进程初始化完成并返回结果时调用此函数。
+ * 它负责处理子进程的初始化结果，并根据结果决定是否设置HTTP监听器或终止进程。
+ * @param {number} retval - 初始化结果，通常是 `constants.ok` 或 `constants.cont`。
+ * @param {string} msg - 相关的消息（如果有）。
+ */
 Server.init_child_respond = (retval, msg) => {
+    // 根据初始化结果进行处理。
     switch (retval) {
-        case constants.ok:
-        case constants.cont:
-            Server.setup_http_listeners();
-            return;
+        case constants.ok: // 如果初始化成功。
+        case constants.cont: // 如果初始化需要继续。
+            Server.setup_http_listeners(); // 设置HTTP监听器。
+            return; // 成功处理，返回。
     }
 
-    const pid = process.env.CLUSTER_MASTER_PID;
+    // 如果初始化返回错误，则记录错误信息。
+    const pid = process.env.CLUSTER_MASTER_PID; // 获取主进程的PID。
     Server.logerror(`init_child returned error ${((msg) ? `: ${msg}` : '')}`);
     try {
+        // 如果存在主进程PID，则尝试杀死主进程。
         if (pid) {
             process.kill(pid);
             Server.logerror(`Killing master (pid=${pid})`);
         }
     }
     catch (err) {
+        // 如果杀死主进程失败，则记录错误并终止当前子进程。
         Server.logerror('Terminating child');
     }
-    logger.dump_and_exit(1);
+    logger.dump_and_exit(1); // 记录所有缓冲的日志并以错误码 1 退出进程。
 }
 
 /**
