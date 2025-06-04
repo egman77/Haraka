@@ -99,7 +99,7 @@ Server.daemonize = function () {
         // 记录日志，表示正在进行守护化
     }
 
-    Server.lognotice(`Open daemon log file: {c.daemon_log_file}...`);
+    Server.lognotice(`Open daemon log file: ${c.daemon_log_file}...`);
     const log_fd = fs.openSync(c.daemon_log_file, 'a');
     // 打开或创建守护进程的日志文件（通常是 /var/log/haraka.log），以追加模式写入
 
